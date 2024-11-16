@@ -19,7 +19,7 @@ cse = cse %>%
 # only 3 measurement dates...
 unique(cse$MEASUREMENT_DATE)
 
-# there are many tree_CNs per full_id
+# there are many tree_CNs per full_id - if I want to look for more FIA data later, for time series?
 length(unique(cse$full_id))
 length(unique(cse$TREE_CN))
 
@@ -48,7 +48,9 @@ dat = cse %>%
             n_pipo = sum(PIPO),
             n_psme = sum(PSME),
             sum_PLOT_BA = sum(PLOT_BA), # still not totally sure what these are... assuming this is basal area. Are they fixed radius plots? # but why would there be multiple different BA, TPA values for each full_id??
-            sum_PLOT_TPA = sum(PLOT_TPA)) %>% # tpa = trees per acre?
+            sum_PLOT_TPA = sum(PLOT_TPA),
+            lon = first(LONGITUDE),
+            lat = first(LATITUDE)) %>% # tpa = trees per acre?
   mutate(pct_dead = n_dead/n,
          pct_potr5 = n_potr5/n,
          pct_pien = n_pien/n,
@@ -66,70 +68,8 @@ hist(dat$sum_PLOT_BA)
 # assuming all from a single site visit in 2018
 unique(cse$MEASUREMENT_DATE) # no way this is correct?
 
-# export to shapefile! for visualizations
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# figuring out FIA COND data
-cond = read.csv("C:/Users/erinc/Desktop/Research/Projects/SUHFER/data/FIA/CO_COND.csv")
-tmp = cond %>%
-  group_by(PLT_CN) %>%
-  summarize(n_condCN = n_distinct(CN),
-            n_years = n_distinct(INVYR))
-# each plt_CN has more than one cond_CN, but only one invyr??
-
-tmp = cond %>%
-  group_by(CN) %>%
-  summarize(n_condCN = n_distinct(PLT_CN),
-            n_years = n_distinct(INVYR))
-
-tmp2 = cond %>%
-  filter(PLT_CN == tmp$PLT_CN[1])
-
-
-plot = read.csv("C:/Users/erinc/Desktop/Research/Projects/SUHFER/data/FIA/CO_PLOT.csv")
-
-tmp = plot %>% 
-  group_by(CN) %>%
-  summarize(years = n_distinct(INVYR))
-
-# doesn't seem like any plots were visited more than once? As best I can tell?
-# in all of Colorado??
-
-tree = read.csv("C:/Users/erinc/Desktop/Research/Projects/SUHFER/data/FIA/CO_TREE.csv")
-colnames(tree)
-
-tmp = tree %>%
-  group_by(CN) %>%
-  summarize(years = n_distinct(INVYR))
-
-unique(tree$INVYR)
-
-
-
-
-
-# sbeadmr
-sbeadmr = read.csv("C:/Users/erinc/Desktop/Research/Projects/SUHFER/data/SBEADMR/Overstory.csv")
-
-length(unique(sbeadmr$PLOT_ID))
-
-sort(unique(sbeadmr$Year))
-
-# were plots visited more than once?
-
-tmp = sbeadmr %>%
-  group_by(PLOT_ID) %>%
-  summarize(years = n_distinct(Year)) %>%
-  filter(years > 1)
+# export
+dat_shp = dat %>%
+  filter(!is.na(lat)) %>%
+  st_as_sf(coords=c('lon', 'lat'), crs=4326)
+st_write(dat_shp, 'data/BullCSE2018/BullCSE2018.gpkg')
