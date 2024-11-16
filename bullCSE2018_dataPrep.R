@@ -47,10 +47,10 @@ dat = cse %>%
             n_abla = sum(ABLA),
             n_pipo = sum(PIPO),
             n_psme = sum(PSME),
-            sum_PLOT_BA = sum(PLOT_BA), # still not totally sure what these are... assuming this is basal area. Are they fixed radius plots? # but why would there be multiple different BA, TPA values for each full_id??
-            sum_PLOT_TPA = sum(PLOT_TPA),
+            sum_PLOT_BA = sum(PLOT_BA), # still not totally sure what these are... basal area, but are they fixed radius plots? # but why would there be multiple different BA, TPA values for each full_id??
+            sum_PLOT_TPA = sum(PLOT_TPA), # tpa = trees per acre?
             lon = first(LONGITUDE),
-            lat = first(LATITUDE)) %>% # tpa = trees per acre?
+            lat = first(LATITUDE)) %>% 
   mutate(pct_dead = n_dead/n,
          pct_potr5 = n_potr5/n,
          pct_pien = n_pien/n,
