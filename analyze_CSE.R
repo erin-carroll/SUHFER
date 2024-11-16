@@ -23,3 +23,5 @@ mod = lm(pred_aspen2018~pct_potr5, data=cse)
 summary(mod)
 
 # will need to look at it in a map...
+
+cse %>% filter(!is.na(pred_aspen2018)) %>% nrow()
