@@ -66,6 +66,10 @@ st_write(dat_shp, 'data/BullCSE2018/BullCSE2018_pts.gpkg', append=F)
 # polygons
 ##########################################
 
+# update polys crs to 4326
+st_crs(polys)
+polys = st_transform(polys, crs=4326)
+
 # filter to polys with relevant setting_ids
 setting_ids = paste0(0, unique(cse$SETTING_ID))
 polys = polys %>%
