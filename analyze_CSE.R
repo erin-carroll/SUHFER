@@ -77,7 +77,7 @@ polys_long = polys %>%
   mutate(var = if_else(grepl('ndmi', name), 'ndmi', '')) %>%
   mutate(var = if_else(grepl('ndvi', name), 'ndvi', var),
          var = if_else(grepl('aspencover', name), 'aspencover', var),
-         var = if_else(grepl('lwc', name), 'lwc', var),)
+         var = if_else(grepl('lwc', name), 'lwc', var))
 
 ggplot(polys_long %>% filter(ORIGINAL_S=='0204056502000003'), aes(x=year, y=value)) +
   geom_point() +

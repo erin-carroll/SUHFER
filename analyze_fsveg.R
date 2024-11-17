@@ -9,7 +9,9 @@ setwd('C:/Users/erinc/Desktop/Research/Projects/SUHFER/')
 ########################################
 
 fsveg = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_AOI.shp') %>%
-  st_transform(crs=4326)
+  st_transform(crs=4326)# %>%
+fsveg = fsveg %>%
+  mutate(unique_id = 1:nrow(fsveg))
 
 fps = list.files('data/predictions', full.names=T)
 
@@ -20,8 +22,79 @@ for (fp in fps){
   colnames(fsveg)[length(colnames(fsveg))] = names(r)[1]
 }
 
-# 
+fsveg_long = fsveg %>%
+  pivot_longer(cols=c(ndmi_2017:prediction_lwc_013024_mean_2023)) %>%
+  mutate(year=as.numeric(str_sub(name, -4, -1))) %>%
+  mutate(var = if_else(grepl('ndmi', name), 'ndmi', '')) %>%
+  mutate(var = if_else(grepl('ndvi', name), 'ndvi', var),
+         var = if_else(grepl('aspencover', name), 'aspencover', var),
+         var = if_else(grepl('lwc', name), 'lwc', var)) %>%
+  filter(!is.na(value))
 
+# test viz
+ggplot(fsveg_long %>% filter(unique_id==unique(fsveg_long$unique_id)[1]), aes(x=year, y=value)) +
+  geom_point() +
+  geom_smooth(method='lm', se=F) +
+  facet_wrap(~var, scales='free_y')
+
+# why is there not a unique setting_id for each polygon in my fsveg table?
+tmp = fsveg %>%
+  group_by(SETTING_ID) %>%
+  summarize(n=n())
+# because 020406DR01020097 has 193 rows where every other ID only has one... why? 
+# who knows. Just added my own unique_id
+
+# assess trends
+for (i in 1:nrow(fsveg)){
+  id = fsveg$unique_id[i]
+  print(id)
+  # ndvi
+  d = fsveg_long %>% filter(unique_id==id, var=='ndvi')
+  if (nrow(d)>0){
+    mod = lm(value~year, data=d)
+    fsveg$ndvi_trend[i] = mod$coefficients[2]
+    fsveg$ndvi_p[i] = summary(mod)$coefficients[2,4]
+  }
+  # ndmi
+  d = fsveg_long %>% filter(unique_id==id, var=='ndmi')
+  if (nrow(d)>0){
+    mod = lm(value~year, data=d)
+    fsveg$ndmi_trend[i] = mod$coefficients[2]
+    fsveg$ndmi_p[i] = summary(mod)$coefficients[2,4]
+  }
+  # lwc
+  d = fsveg_long %>% filter(unique_id==id, var=='lwc')
+  if (nrow(d)>0){
+    mod = lm(value~year, data=d)
+    fsveg$lwc_trend[i] = mod$coefficients[2]
+    fsveg$lwc_p[i] = summary(mod)$coefficients[2,4] 
+  }
+}
+
+fsveg %>%
+  st_write('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg', append=F) # export
+
+# just checking that it looks right
+tmp = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg')
+# okay - for how many polygons do we have a significant, negative trend in all ndmi + ndvi + lwc?
+sig = 0.1
+check = tmp %>% # this actually gives us 0 polygons lol
+  filter(ndvi_trend<0, ndmi_trend<0, lwc_trend<0,
+         ndvi_p<sig, ndmi_p<sig, lwc_p<sig)
+check = tmp %>% 
+  filter(ndvi_trend<0, ndmi_trend<0, ndvi_p<sig, ndmi_p<sig) # this only gives us 4 rows... They must be doing quite poorly?
+
+# what about just where they're all negative? p values are tricky with an n of 7?
+check = tmp %>% 
+  filter(ndvi_trend<0, ndmi_trend<0, lwc_trend<0) # this gives many rows! About 12% of all
+
+########################################
+# FSVEG - gmug activity validation
+########################################
+fire = st_read('data/GMUG_Activities/GMUG_FirePerimeters.shp')
+hazFuels = st_read('data/GMUG_Activities/GMUG_HazFuelsTrts.shp')
+silvReforestation = st_read('data/GMUG_Activities/GMUG_SilvReforestation.shp')
+timberHarvest = st_read('data/GMUG_Activities/GMUG_TimberHarvest.shp')
 
 
 ########################################
