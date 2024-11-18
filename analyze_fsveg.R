@@ -1,6 +1,9 @@
 library(sf)
+sf_use_s2(FALSE)
 library(terra)
 library(ggplot2)
+library(dplyr)
+library(tidyverse)
 
 setwd('C:/Users/erinc/Desktop/Research/Projects/SUHFER/')
 
@@ -30,6 +33,8 @@ fsveg_long = fsveg %>%
          var = if_else(grepl('aspencover', name), 'aspencover', var),
          var = if_else(grepl('lwc', name), 'lwc', var)) %>%
   filter(!is.na(value))
+
+# write.csv(fsveg_long, 'data/FSVegSpatial2Feb2021_AOI/fsveg_long.csv')
 
 # test viz
 ggplot(fsveg_long %>% filter(unique_id==unique(fsveg_long$unique_id)[1]), aes(x=year, y=value)) +
@@ -91,11 +96,105 @@ check = tmp %>%
 ########################################
 # FSVEG - gmug activity validation
 ########################################
-fire = st_read('data/GMUG_Activities/GMUG_FirePerimeters.shp')
-hazFuels = st_read('data/GMUG_Activities/GMUG_HazFuelsTrts.shp')
-silvReforestation = st_read('data/GMUG_Activities/GMUG_SilvReforestation.shp')
-timberHarvest = st_read('data/GMUG_Activities/GMUG_TimberHarvest.shp')
+aoi = st_read('data/AOI/AOI.shp')
+fsveg = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg')
+fsveg_long = read.csv('data/FSVegSpatial2Feb2021_AOI/fsveg_long.csv')
+fire = st_read('data/GMUG_Activities/GMUG_FirePerimeters.shp') %>%
+  st_transform(crs=4326) #%>%
+  # filter(st_intersects(geometry, aoi) %>% lengths() > 0)
+hazFuels = st_read('data/GMUG_Activities/GMUG_HazFuelsTrts.shp') %>%
+  st_transform(crs=4326) %>%
+  filter(st_intersects(geometry, aoi) %>% lengths() > 0)
+silvReforestation = st_read('data/GMUG_Activities/GMUG_SilvReforestation.shp') %>%
+  st_transform(crs=4326) %>%
+  filter(st_intersects(geometry, aoi) %>% lengths() > 0)
+timberHarvest = st_read('data/GMUG_Activities/GMUG_TimberHarvest.shp') %>%
+  st_transform(crs=4326) %>%
+  # filter(st_intersects(geometry, aoi) %>% lengths() > 0)%>%
+  mutate(FY_COMPLET = as.integer(FY_COMPLET))
 
+# this analysis might actually make more sense at the pixel-scale? Given the limited sample size of events like fire within the relevant time scale
+# largely because fire polygons in particular often do not cover the entire polygon! Only small chunks. So absolutely should do this at the pixel-level
+# and in that case, the plots would be per-fire, not per-fsveg polygon?
+# what about the other treatment types - do those happen at the fsveg polygon scale?
+# there are plenty of timber cuts, and they appear to happen more at the fsveg polygon scale. But would still make sense to do it on a per-treatment, pixel basis.
+# would make sense to me to just do timber, fire to start. We're looking for evidence that our values are tracking something real and useful on the ground...
+
+# there are ZERO examples of clear cutting that or similar treatment types deployed in current AOI... Seems like a better
+# plan would be to identify the fire, clear cuts that happen ANYWHERE in the GMUG from 2018-2023, to see if we are capturing them.
+# generate new imagery and then do the analysis on a per-area basis.
+# I'll gather all the new imagery at one time. So I should (1) identify the fire/timber regions I will want imagery for. 
+# and then (2) move on to figuring out the other validation datasets that we have; and then (3) getting imagery for both.
+# do i also (2.5) want to see if in our demography datasets that are any clear cases of increasing mortality over the period 2020-2023? In which I could do some similar analyses, since still in the GMUG I think?
+
+# there are 241 timberHarvest polygons, 12 fire polygons that could be useful to look at
+timberHarvest = timberHarvest %>% 
+  filter(FY_COMPLET>2017, TREATMENT_ %in% c("Stand Clearcutting(E", "Stand clearcutting (", "Patch clearcutting (", "Coppice cut (EA/RN/F")) %>% # my guess at which of these would be most obvious? But are they really what I think they are lol
+  select(geometry)
+fire = fire %>%
+  filter(FIREYEAR>2017) %>%
+  select(geometry)
+# merge them
+new_aoi = timberHarvest %>%
+  rbind(fire) %>%
+  filter(!st_intersects(geometry, aoi) %>% lengths() > 0) %>%
+  st_write('data/AOI/new_AOI_fire_timber.gpkg')
+# okay, will gather imagery for above when I get there. To see what we're capturing.
+
+# sql note, disregard
+# TREATMENT_ IN ('Stand Clearcutting(E', 'Stand clearcutting (', 'Patch clearcutting (', 'Coppice cut (EA/RN/F') and (FY_COMPLET > '2017')
+
+# for timber, there are different kinds of treatments (TREATMENT_)
+timberHarvest %>% filter(FY_COMPLET>2017) %>% pull(TREATMENT_) %>% unique()
+# can get years from FY_COMPLET
+hist(timberHarvest$FY_COMPLET)
+
+# question 1 - how many of the above occur within our time window?
+hist(fire$FIREYEAR)
+
+# FIRE
+for (i in 1:nrow(fsveg)){
+  id = fsveg$unique_id[i]
+  d = fsveg_long %>%
+    filter(unique_id==id, var!='aspencover')
+  
+  fire_year = fire %>%
+    filter(st_intersects(geometry, fsveg[i,]) %>% lengths() > 0) %>%
+    filter(FIREYEAR>2014) %>%
+    pull(FIREYEAR) %>%
+    unique()
+  
+  if (length(fire_year)>0){
+    gg = ggplot(d, aes(x=year, y=value)) +
+      geom_point() +
+      geom_smooth(method='lm') +
+      facet_wrap(~var, scales='free_y') +
+      labs(title=paste0(fsveg$SETTING_ID[i], ' - ', id)) +
+      geom_vline(xintercept=fire_year[1], linetype='dashed', color='red')
+    print(gg)
+  }
+}
+
+# TIMBER
+for (i in 1:nrow(fsveg)){
+  id = fsveg$unique_id[i]
+  d = fsveg_long %>%
+    filter(unique_id==id, var!='aspencover')
+  timber_year = timberHarvest %>%
+    filter(st_intersects(geometry, fsveg[i,]) %>% lengths() > 0) %>%
+    filter(FY_COMPLET>2017) %>%
+    pull(FY_COMPLET) %>%
+    unique()
+  if (length(timber_year)>0){
+    gg = ggplot(d, aes(x=year, y=value)) +
+      geom_point() +
+      geom_smooth(method='lm') +
+      facet_wrap(~var, scales='free_y') +
+      labs(title=paste0(fsveg$SETTING_ID[i], ' - ', id)) +
+      geom_vline(xintercept=timber_year[1], linetype='dashed', color='green')
+    print(gg)
+  }
+}
 
 ########################################
 # FSVEG - aspen cover validation
