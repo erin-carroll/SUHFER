@@ -62,9 +62,22 @@ dat_shp = dat %>%
   st_as_sf(coords=c('lon', 'lat'), crs=4326)
 st_write(dat_shp, 'data/BullCSE2018/BullCSE2018_pts.gpkg', append=F)
 
-##########################################
+tmp = 
+
+## why did I use plygons, not points for this originally?? Should I go back to points?
+# And, having used polygons, why did I not use the FSveg polys instead of tme cse polys? Are they the same??
+# okay the cse polys are the fsveg polys, so that's fine. But in that case, how did I go about summarizing points to polygons?
+# okay actually a perfectly fine way to summarize (at the polygon level). But can maybe keep more polygons??
+  ##########################################
 # polygons
 ##########################################
+
+## see if I keep more cse data using fsveg data?
+# fsveg = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg')
+# st_crs(fsveg)
+# setting_ids = paste0(0, unique(cse$SETTING_ID))
+# fsveg = fsveg %>%
+#   filter(SETTING_ID %in% setting_ids) # nope, gives same
 
 # update polys crs to 4326
 st_crs(polys)

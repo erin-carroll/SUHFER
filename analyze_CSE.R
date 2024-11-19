@@ -118,5 +118,33 @@ ggplot(polys) +
   labs(x='CSE frac dead 2018', y='predicted trend 2017-2023', title='LWC', color='p value')
 
 
+############################################
+## final figures
+############################################
+polys = st_read('data/BullCSE2018/BullCSE2018_polys_predictions.gpkg')
+
+long_p = polys %>%
+  pivot_longer(cols=c(ndvi_p, ndmi_p, lwc_p), names_to='variable', values_to='p') %>%
+  select(ORIGINAL_S, variable, p) %>%
+  mutate(variable=gsub('_p', '', variable)) %>%
+  as.data.frame()
+long = polys %>%
+  pivot_longer(cols=c(ndvi_trend, ndmi_trend, lwc_trend), names_to='variable', values_to='slope') %>%
+  mutate(variable=gsub('_trend', '', variable)) %>%
+  as.data.frame() %>%
+  select(-c(ndvi_p:lwc_p)) %>%
+  left_join(long_p, by=c('ORIGINAL_S', 'variable')) %>%
+  mutate(sig=if_else(p<0.1, 1, 0))
+
+# compare predicted trends with pct_mortality?
+
+ggplot(data=long, aes(x=pct_dead, y=slope)) +
+  geom_point(aes(color=p, shape=as.factor(sig))) +
+  scale_shape_manual(values=c('1'=16, '0'=1)) +
+  scale_color_continuous(type='viridis') +
+  geom_smooth(method='lm') +
+  geom_hline(yintercept=0, linetype='dashed') +
+  labs(y='trend (2017-2023)', x='CSE fraction dead 2018') +
+  facet_wrap(~variable, scales='free_y') 
 
 
