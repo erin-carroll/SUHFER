@@ -62,9 +62,11 @@ def get_access_token(username: str, password: str) -> str:
 
 data_collection = "SENTINEL-2"
 
+# only download zip files to start
+
 for y in years:
     for m in months:
-        for a in range(0, len(aois)):
+        for a in range(0, 1):
             print('------------------------------')
             print(f'MONTH YEAR - {y} {m} - AOI {a}')
             print('------------------------------')
@@ -100,6 +102,10 @@ for y in years:
                     tmp = pd.DataFrame.from_dict(r["value"])
                     tmp = tmp[tmp['Name'].str.contains('L2A')]
                     ids = tmp['Id']
+                    # filter list of ids to only those which haven't been done yet
+                    done = [x.strip('.zip') for x in os.listdir(os.path.join(s2, str(y), m)) if x.endswith('.zip')]
+                    ids = [x for x in ids if x not in done]
+                    
                     print('\n', start_date)
                     print(tmp.shape[0])
     
@@ -113,117 +119,17 @@ for y in years:
                         session.headers.update(headers)
                         response = session.get(url, headers=headers, stream=True, timeout=60)
     
-                        fp = os.path.join(s2, str(y), m, f'{id}_AOI_{a}.zip')
+                        fp = os.path.join(s2, str(y), m, f'{id}.zip')
                         with open(fp, "wb") as file:
                             for chunk in response.iter_content(chunk_size=8192):
                                 if chunk:
                                     file.write(chunk)
     
                         response.close()
-                        time.sleep(10)
+                        time.sleep(30)
                         gc.collect()
     
     
                 except: pass
     
             print('     data download round 1 complete')
-    
-            print('downloading data round 2...')
-    
-            # going back through to fix dumb broken files that didn't download correctly
-            zip_folder = os.path.join(s2, str(y), m)
-            zips = glob.glob(zip_folder + '/*.zip')
-    
-            bad = ['tmp']
-    
-            while len(bad) > 0:
-                bad = []
-                for z in zips:
-                    size = os.stat(z).st_size
-                    if size < 1000:
-                        print(z, size)
-                        bad.append(z)
-                print(len(bad))
-    
-                for id in bad:
-                    access_token = get_access_token("erin_carroll@berkeley.edu", "CQW_kc_2K-Pq!4u")
-                    headers = {"Authorization": f"Bearer {access_token}"}
-    
-                    id = id.split('/')[9].split('.')[0]
-                    print(id)
-    
-                    url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({id})/$value"
-                    session = requests.Session()
-                    session.headers.update(headers)
-                    response = session.get(url, headers=headers, stream=True, timeout=10)
-    
-                    fp = os.path.join(s2, str(y), m, f'{id}_AOI_{a}.zip')
-                    with open(fp, "wb") as file:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                file.write(chunk)
-    
-                    response.close()
-                    time.sleep(10)
-                    gc.collect()
-    
-            print('     all data downloaded')
-    
-            # unzip all of the folders
-    
-            print('unzipping folders...')
-    
-            zip_folder = os.path.join(s2, str(y), m)
-            zips = glob.glob(zip_folder + '/*.zip')
-    
-            bad = []
-            for z in zips:
-                try:
-                    shutil.unpack_archive(z, zip_folder, 'zip')
-                except Exception as error:
-                    print(f'     unable to unzip - {z}')
-                    print(f'     {error} \n')
-                    bad.append(z)
-    
-            while len(bad) > 0:
-                bad = []
-                for z in bad:
-                    id = z.split('/')[9].split('.')[0]
-                    print(f'redownloading {id}...')
-    
-                    access_token = get_access_token("erin_carroll@berkeley.edu", "CQW_kc_2K-Pq!4u")
-                    headers = {"Authorization": f"Bearer {access_token}"}
-                    url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({id})/$value"
-                    session = requests.Session()
-                    session.headers.update(headers)
-                    response = session.get(url, headers=headers, stream=True, timeout=10)
-                    fp = os.path.join(s2, str(y), m, f'{id}_AOI_{a}.zip')
-                    with open(fp, "wb") as file:
-                        for chunk in response.iter_content(chunk_size=8192):
-                            if chunk:
-                                file.write(chunk)
-                    response.close()
-                    time.sleep(10)
-                    gc.collect()
-    
-                    try:
-                        shutil.unpack_archive(z, zip_folder, 'zip')
-                    except Exception as error:
-                        print(f'     STILL unable to unzip after redownload - {id}')
-                        print(f'     {error} \n')
-                        bad.append(z)
-                print(len(bad))
-            
-            print('checking unzipped folder contents...')
-            
-            zips = glob.glob(zip_folder + '/*.SAFE')
-            for z in zips:
-                tmp = glob.glob(z + '/*/*/*/*/*.jp2')
-                if len(tmp)>30:
-                    pass
-                else: print('BAD UNZIPPED FOLDER', len(tmp), z)
-    
-            print('     all folders unzipped')
-
-print('done!')
-
