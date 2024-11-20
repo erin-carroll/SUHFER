@@ -16,9 +16,11 @@ fsveg = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_AOI.shp') %>
 fsveg = fsveg %>%
   mutate(unique_id = 1:nrow(fsveg))
 
-fps = list.files('data/predictions', full.names=T)
+fps = list.files('data/predictions', full.names=T, pattern='\\.tif$')
+# tmp = list.files('data/predictions', full.names=T, pattern="lwc.*\\.tif$")
 
 for (fp in fps){
+  print(fp)
   r = rast(fp)
   vals = terra::extract(r, fsveg, fun='mean', na.rm=T, touches=T)
   fsveg$val = vals[,2]
@@ -76,8 +78,25 @@ for (i in 1:nrow(fsveg)){
   }
 }
 
+fsveg = fsveg %>%
+  rename(aspencover_2017=prediction_aspencover_032923_mean_2017,
+         aspencover_2018=prediction_aspencover_032923_mean_2018,
+         aspencover_2019=prediction_aspencover_032923_mean_2019,
+         aspencover_2020=prediction_aspencover_032923_mean_2020,
+         aspencover_2021=prediction_aspencover_032923_mean_2021,
+         aspencover_2022=prediction_aspencover_032923_mean_2022,
+         aspencover_2023=prediction_aspencover_032923_mean_2023,
+         lwc_2017=prediction_lwc_013024_mean_2017,
+         lwc_2018=prediction_lwc_013024_mean_2018,
+         lwc_2019=prediction_lwc_013024_mean_2019,
+         lwc_2020=prediction_lwc_013024_mean_2020,
+         lwc_2021=prediction_lwc_013024_mean_2021,
+         lwc_2022=prediction_lwc_013024_mean_2022,
+         lwc_2023=prediction_lwc_013024_mean_2023) %>%
+  mutate(cover_type_number=as.numeric(as.factor(COVER_TYPE)))
+
 fsveg %>%
-  st_write('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg', append=F) # export
+  st_write('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions_CHECK.gpkg', append=F) # export
 
 # just checking that it looks right
 tmp = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_predictions.gpkg')
@@ -235,3 +254,21 @@ ggplot(data=fsveg %>% filter(COVER_TYPE=='TAA')) +
 # other potentiall useful fields
 summary(fsveg$CANOPY_CLO) # canopy closer + species could be useful for NDVI estimates?
 summary(fsveg$STAND_COND)
+
+
+
+
+###############
+## add numeric cover type field to fsveg prediction data for gee app
+
+dat = st_read('data/FSVegSpatial2Feb2021_AOI/FSVegSpatial2Feb2021_AOI_predictions.shp') %>%
+  filter(lwc_2017<100)
+
+summary(dat$cover_ty_1)
+
+tmp = c(dat$lwc_2017, dat$lwc_2018, dat$lwc_2019, dat$lwc_2020, dat$lwc_2021, dat$lwc_2022, dat$lwc_2023)
+summary(tmp)
+
+hist(tmp)
+tmp = dat %>% filter(lwc_2017>100)
+
