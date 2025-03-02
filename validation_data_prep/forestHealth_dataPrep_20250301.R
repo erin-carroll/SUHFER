@@ -25,8 +25,8 @@ plot13 = read.csv('data/forest health/aspenSADplots13_clean_PLOT.csv') %>%
 
 tmp = plot13 %>%
   filter(GPS.Zone=='12N') %>%
-  st_as_sf(coords=c('GPS.E', 'GPS.N'), crs=32612) %>%
-  st_transform(crs=32613) %>%
+  st_as_sf(coords=c('GPS.E', 'GPS.N'), crs=26912) %>%
+  st_transform(crs=26913) %>%
   mutate(GPS.E_13N=st_coordinates(.)[,1],
          GPS.N_13N=st_coordinates(.)[,2])
 
