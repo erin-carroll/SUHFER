@@ -13,10 +13,34 @@ import shutil
 import gc
 import glob
 import time
+from shapely.geometry import box
+from itertools import product
+
 import rasterio
 from rasterio.crs import CRS
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.features import shapes
+from rasterio.plot import show
+import rasterio.mask
+from rasterio.mask import mask
+from rasterio.enums import Resampling as ResamplingEnum
+from rasterio.transform import Affine, rowcol, xy
+from rasterio.windows import from_bounds
+
+import tensorflow as tf
+import keras
+import keras.models
+from bfgn.architectures import unet
+from bfgn.experiments import losses
+
+
+
+
+
+#########################################
+## IMAGERY PREP
+#########################################
 
 data_collection = "SENTINEL-2"
 nodatavalue = -9999
@@ -292,36 +316,143 @@ def reproject_raster(src, output_raster, dst_crs):
                 resampling=Resampling.nearest
                 )
 
+def clip_raster_to_gdf_bounds(raster_array, transform, gdf):
+    # Get bounds of the GeoDataFrame
+    minx, miny, maxx, maxy = gdf.total_bounds
 
-def calculate_ndvi_ndmi(fp):
-    try:
-        with rasterio.open(fp) as src:
-            profile=src.profile
-            arr = src.read()
-        arr = arr/10000
-        arr[arr>1] = 1
-        b4 = arr[2,...]
-        b8 = arr[6,...]
-        b11 = arr[8,...]
-        ndvi = (b8-b4)/(b8+b4)
-        ndmi = (b8-b11)/(b8+b11)
-        profile.update(dtype='float64', count=1)
-        fp_ndvi = fp.replace('mosaic', 'NDVI')
-        fp_ndmi = fp.replace('mosaic', 'NDMI')
-        with rasterio.open(fp_ndvi, 'w', **profile) as dst:
-            dst.write(ndvi, 1)
-        with rasterio.open(fp_ndmi, 'w', **profile) as dst:
-            dst.write(ndmi, 1)
-        os.sync()
-    except:
-        return fp
+    # Convert bounds to pixel coordinates (row/col)
+    row_start, col_start = rowcol(transform, minx, maxy)  # upper-left
+    row_stop, col_stop = rowcol(transform, maxx, miny)    # lower-right
 
+    # Ensure indices are in proper order
+    row_min, row_max = sorted((row_start, row_stop))
+    col_min, col_max = sorted((col_start, col_stop))
 
+    # Clip the array
+    clipped_array = raster_array[row_min:row_max, col_min:col_max]
 
+    # Update transform to reflect new upper-left corner
+    new_x, new_y = xy(transform, row_min, col_min)
+    new_transform = Affine.translation(new_x, new_y) * Affine.scale(transform.a, transform.e)
 
+    return clipped_array, new_transform
 
+def mosaic_gmug(year, month, index, tif_folder, target_crs, gdf):
+    # get filepaths
+    fps = sorted(glob.glob(tif_folder + f'/*/{year}/{month}/*_{index}.tif'))
+    # define filepath out
+    fp_out = tif_folder+f'/{year}_{month}_{index}.tif' 
 
+    # get final merged output transform
+    bounds_list = []
+    resolutions = []
+    for path in fps:
+        with rasterio.open(path) as src:
+            res = src.res
+            resolutions.append(res)
+            reprojected_bounds = rasterio.warp.transform_bounds(src.crs, target_crs, *src.bounds)
+            bounds_list.append(reprojected_bounds)
+    # Union of all AOI-intersecting raster bounds
+    minxs, minys, maxxs, maxys = zip(*bounds_list)
+    union_bounds = (min(minxs), min(minys), max(maxxs), max(maxys))
+    # Use the resolution of the first raster if not specified
+    xres, yres = resolutions[0]
+    # Define output raster dimensions and transform
+    out_transform = Affine.translation(union_bounds[0], union_bounds[3]) * Affine.scale(xres, -yres)
+    out_width = int((union_bounds[2] - union_bounds[0]) / xres)
+    out_height = int((union_bounds[3] - union_bounds[1]) / yres)
 
+    # max composite all rasters into one
+    stack = [None]*2 # empty list of length 2 to hold arrays to merge
+    for i in range(len(fps)):
+        path = fps[i]
+        with rasterio.open(path) as src:
+            # mask values outside polygon to zero
+            gmug_src_aoi = gdf.to_crs(src.crs)
+            src_clipped_data, src_clipped_transform = mask(src, [gmug_src_aoi.geometry.iloc[0]], crop=True, nodata=np.nan, filled=True)
+    
+            # create temp destination array
+            dst_array = np.full((out_height, out_width), np.nan, dtype=np.float32)
+            reproject(
+                source=src_clipped_data,
+                destination=dst_array,
+                src_transform=src_clipped_transform,
+                src_crs=src.crs,
+                dst_transform=out_transform,
+                dst_crs=target_crs,
+                dst_nodata=np.nan,
+                resampling=Resampling.bilinear
+            )
+        if i==0:
+            stack[0] = dst_array
+        else:
+            stack[1] = dst_array
+            max_composite = np.nanmax(np.stack(stack), axis=0)
+            stack[0] = max_composite
+
+    # clip to gmug extent (cut large NA regions)
+    max_composite, out_transform = clip_raster_to_gdf_bounds(max_composite, out_transform, gdf)
+
+    # export
+    meta = {
+        'driver': 'GTiff',
+        'height': max_composite.shape[0],
+        'width': max_composite.shape[1],
+        'count': 1,
+        'dtype': 'float32',
+        'crs': target_crs,
+        'transform': out_transform,
+        'nodata': np.nan
+    }
+    
+    with rasterio.open(fp_out, 'w', **meta) as dst:
+        dst.write(max_composite, 1)
+
+    os.sync()
+#########################################
+## DEPLOY LWC MODEL
+#########################################
+
+def get_coords(n, window_radius, buffer):
+    c1 = 0
+    cs = []
+    while c1 < n:
+        c1 = c1
+        c2 = c1 + 2*window_radius
+        if c2 > n:
+            break
+        cs.append([c1, c2])
+        c1 = c1 + 2*(window_radius-buffer)
+    if cs[len(cs)-1][1] < n:
+        c2 = n
+        c1 = c2 - 2*window_radius
+        cs.append([c1, c2])
+    return cs
+
+def _cropped_loss(y_true, y_pred):
+    if (buffer is not None):
+        y_true = y_true[:, buffer:-buffer, buffer:-buffer, :]
+        y_pred = y_pred[:, buffer:-buffer, buffer:-buffer, :]
+    mse = keras.losses.MeanSquaredError()
+    loss = mse(y_true, y_pred)
+    if weighted:
+        weights = sample_weight
+        loss = loss * weights
+    return loss
+
+# define custom loss function
+def mse_cropped_loss(buffer, weighted):
+    def _cropped_loss(y_true, y_pred):
+        if (buffer is not None):
+            y_true = y_true[:, buffer:-buffer, buffer:-buffer, :]
+            y_pred = y_pred[:, buffer:-buffer, buffer:-buffer, :]
+        mse = keras.losses.MeanSquaredError()
+        loss = mse(y_true, y_pred)
+        if weighted:
+            weights = sample_weight
+            loss = loss * weights
+        return loss
+    return _cropped_loss
 
 
 
