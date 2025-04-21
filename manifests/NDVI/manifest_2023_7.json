@@ -1,0 +1,16 @@
+{
+  "name": "projects/suhfer/assets/NDVI_monthly/ndvi_2023_7",
+  "tilesets": [
+    {
+      "sources": [
+        {
+          "uris": [
+            "gs://suhfer_gee_assets/2023_7jul_NDVI.tif"
+          ]
+        }
+      ]
+    }
+  ],
+  "startTime": "2023-07-01T00:00:00Z",
+  "endTime": "2023-08-01T00:00:00Z"
+}

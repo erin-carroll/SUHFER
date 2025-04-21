@@ -1,0 +1,16 @@
+{
+  "name": "projects/suhfer/assets/NDMI_monthly/ndmi_2020_9",
+  "tilesets": [
+    {
+      "sources": [
+        {
+          "uris": [
+            "gs://suhfer_gee_assets/2020_9sep_NDMI.tif"
+          ]
+        }
+      ]
+    }
+  ],
+  "startTime": "2020-09-01T00:00:00Z",
+  "endTime": "2020-10-01T00:00:00Z"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "projects/suhfer/assets/NDMI_monthly/ndmi_2019_7",
+  "tilesets": [
+    {
+      "sources": [
+        {
+          "uris": [
+            "gs://suhfer_gee_assets/2019_7jul_NDMI.tif"
+          ]
+        }
+      ]
+    }
+  ],
+  "startTime": "2019-07-01T00:00:00Z",
+  "endTime": "2019-08-01T00:00:00Z"
+}

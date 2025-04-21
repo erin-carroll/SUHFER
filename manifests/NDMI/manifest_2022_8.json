@@ -1,0 +1,16 @@
+{
+  "name": "projects/suhfer/assets/NDMI_monthly/ndmi_2022_8",
+  "tilesets": [
+    {
+      "sources": [
+        {
+          "uris": [
+            "gs://suhfer_gee_assets/2022_8aug_NDMI.tif"
+          ]
+        }
+      ]
+    }
+  ],
+  "startTime": "2022-08-01T00:00:00Z",
+  "endTime": "2022-09-01T00:00:00Z"
+}
