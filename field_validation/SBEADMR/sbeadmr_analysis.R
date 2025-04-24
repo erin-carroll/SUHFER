@@ -90,8 +90,9 @@ for (i in 1:ncol(df)) {
 }
 rownames(label_matrix) <- colnames(df)
 colnames(label_matrix) <- colnames(df)
-subset_rows <- 1:4
-subset_cols <- tail(colnames(df), 3)
+subset_rows <- 1:2
+# subset_cols <- tail(colnames(df), 3)
+subset_cols <- 3:4
 cor_matrix_subset <- cor_matrix[subset_rows, subset_cols]
 p_matrix_subset <- p_matrix[subset_rows, subset_cols]
 label_matrix_subset <- label_matrix[subset_rows, subset_cols]

@@ -103,12 +103,16 @@ for (i in 1:ncol(df)) {
 rownames(label_matrix) <- colnames(df)
 colnames(label_matrix) <- colnames(df)
 subset_rows <- 1:2
-subset_cols <- tail(colnames(df), 12)
-cor_matrix_subdset <- cor_matrix[subset_rows, subset_cols]
+# subset_cols <- tail(colnames(df), 12)
+subset_cols = c("max_NDVI", "max_NDMI", "min_NDVI", "min_NDMI", "mean_NDVI", "mean_NDMI", "std_NDVI", "std_NDMI" )
+# subset_rows = c("max_NDVI", "max_NDMI", "min_NDVI", "min_NDMI", "mean_NDVI", "mean_NDMI", "std_NDVI", "std_NDMI" )
+# subset_cols <- 1:2
+
+cor_matrix_subset <- cor_matrix[subset_rows, subset_cols]
 p_matrix_subset <- p_matrix[subset_rows, subset_cols]
 label_matrix_subset <- label_matrix[subset_rows, subset_cols]
 
-png('presentation 3-3-25/figs/corrplot_CFRI_polygons.png', width=2000, height=561, res=300)
+png('report/fig5, cfri.png', width=2000, height=561, res=300)
 
 corrplot(cor_matrix_subset, method = "color", 
          tl.col = "black", tl.cex=0.5        # Make axis labels black

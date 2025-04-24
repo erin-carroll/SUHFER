@@ -134,7 +134,7 @@ plot_trends_spectra = dat %>%
 plot_trends = plot_trends %>%
   left_join(plot_trends_spectra, by='Plot')
 
-df = plot_trends %>% select(-plot)
+df = plot_trends %>% select(-Plot)
 cor_matrix <- cor(df, use = "complete.obs")
 cor.mtest <- function(mat) {
   mat <- as.matrix(mat)
@@ -164,7 +164,8 @@ for (i in 1:ncol(df)) {
 rownames(label_matrix) <- colnames(df)
 colnames(label_matrix) <- colnames(df)
 subset_rows <- 1:5
-subset_cols <- tail(colnames(df), 5)
+# subset_cols <- tail(colnames(df), 3)
+subset_cols <- c('slope_NDVI', 'slope_NDMI')
 cor_matrix_subset <- cor_matrix[subset_rows, subset_cols]
 p_matrix_subset <- p_matrix[subset_rows, subset_cols]
 label_matrix_subset <- label_matrix[subset_rows, subset_cols]
@@ -181,6 +182,7 @@ for (i in seq_along(p_values)) {
        labels = as.vector(t(label_matrix_subset))[i], 
        col = "black", cex = 0.7, font = font_weight)  # Correct font application
 }
+ggsave('report/fig5_fhp.png')
 
 #######################################
 ## predict declining / improving / stable
