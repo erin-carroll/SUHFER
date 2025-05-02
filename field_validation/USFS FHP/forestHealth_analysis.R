@@ -8,15 +8,16 @@ library(reshape2)
 library(randomForest)
 library(caret)
 library(keras)
+library(patchwork)
 
 setwd('C:/Users/erinc/Desktop/Research/Projects/SUHFER')
 
-dat = read.csv('data/forest health/plots_spectra.csv') %>%
+dat = read.csv('data/forest health/FHP_plots_spectra.csv') %>%
   mutate(date=paste(month, year)) %>%
   mutate(date=lubridate::my(date),
          plot_type = str_sub(Plot, -1, -1))
-plots = read.csv('data/forest health/forest_health_plots.csv')
-trees = read.csv('data/forest health/forest_health_trees_plot-level_20250301.csv') %>%
+plots = read.csv('data/forest health/FHP_plots.csv')
+trees = read.csv('data/forest health/FHP_plot-level.csv') %>%
   mutate(pct_healthy = n_healthy/n_aspen,
          pct_declining = n_declining/n_aspen,
          pct_dead = (n_recent_dead + n_snag)/n_aspen,
@@ -117,7 +118,8 @@ ggplot(data=dat %>%
 # correlations of change over time
 plot_trends = trees %>%
   filter(Plot %in% keep_plots, Year>2008) %>%
-  group_by(Plot) %>%
+  mutate(plot_type=if_else(plot_type=='H', 'healthy', 'SAD')) %>%
+  group_by(Plot, plot_type) %>%
   summarize(slope_pct_healthy=coef(lm(pct_healthy~Year))[2],
             slope_pct_declining=coef(lm(pct_declining~Year))[2],
             slope_pct_dead=coef(lm(pct_dead~Year))[2],
@@ -134,7 +136,7 @@ plot_trends_spectra = dat %>%
 plot_trends = plot_trends %>%
   left_join(plot_trends_spectra, by='Plot')
 
-df = plot_trends %>% select(-Plot)
+df = plot_trends %>% ungroup() %>% select(-Plot, -plot_type)
 cor_matrix <- cor(df, use = "complete.obs")
 cor.mtest <- function(mat) {
   mat <- as.matrix(mat)
@@ -180,64 +182,44 @@ for (i in seq_along(p_values)) {
   
   text(corr_coords_subset$Var1[i], corr_coords_subset$Var2[i], 
        labels = as.vector(t(label_matrix_subset))[i], 
-       col = "black", cex = 0.7, font = font_weight)  # Correct font application
+       col = "black", cex = 1, font = font_weight)  # Correct font application
 }
-ggsave('report/fig5_fhp.png')
-
-#######################################
-## predict declining / improving / stable
-###########################################
-
-# first assign values to plots based on FHP data
-hist(plot_trends$slope_pct_dead)
-stable_threshold = 0.01
-
-# seriously declining category?
-plot_trends$status_true = 'stable'
-plot_trends$status_true[plot_trends$slope_pct_dead < -stable_threshold] = 'improving'
-plot_trends$status_true[plot_trends$slope_pct_dead > stable_threshold] = 'declining'
-plot_trends$status_true = factor(plot_trends$status_true, levels=c('declining', 'stable', 'improving'))
-
-# then try to predict those categories as a function of NDVI, NDMI?
-
-# over the period 2013 - 202x
-ggplot(data=plot_trends) +
-  geom_bar(aes(x=status_true, fill=status_true))
-
-## first just with NDMI thresholds
-ggplot(plot_trends)+
-  geom_histogram(aes(x=slope_NDMI, fill=status_true), position='identity', alpha=0.5)
-stable_threshold = 0
-plot_trends$status_predicted1 = 'stable'
-plot_trends$status_predicted1[plot_trends$slope_NDMI < -stable_threshold] = 'declining'
-plot_trends$status_predicted1[plot_trends$slope_NDMI > stable_threshold] = 'improving'
-plot_trends$status_predicted1 = factor(plot_trends$status_predicted1, levels=c('declining', 'stable', 'improving'))
-confusionMatrix(plot_trends$status_predicted1, plot_trends$status_true)
-
-# if NDMI and NDVI are declining, it's declining
-# then re-define decline more conservatively
-plot_trends = plot_trends %>%
-  mutate(status_true2=if_else(slope_pct_dead>0, 'declining', 'not declining'),
-         status_predicted2=if_else((slope_NDMI<0)&(slope_NDVI<0), 'declining', 'not declining')) %>%
-  mutate(status_true2=factor(status_true2, levels=c('declining', 'not declining')),
-         status_predicted2=factor(status_predicted2, levels=c('declining', 'not declining')))
-confusionMatrix(plot_trends$status_predicted2, plot_trends$status_true2)
+# ggsave('report/fig5_fhp.png')
 
 
+# other viz
+linesize=0.5
+pointsize=0.25
+textsize=8
 
-# super simple - just use a random forest to predict status a function of the trend lines?
-set.seed(1234)
-# train = createFolds(plot_trends$status_true, k=10, list=F)
-train = createDataPartition(plot_trends$status_true, p=0.7, list=F)
-train_data <- plot_trends[train, ] %>% select(slope_NDVI, slope_NDMI, status_true)
-test_data  <- plot_trends[-train, ] %>% select(slope_NDVI, slope_NDMI, status_true)
+ndmi = ggplot(data=plot_trends,
+              aes(x=slope_pct_dead, y=slope_NDMI, color=plot_type)) +
+  geom_point(size=pointsize) +
+  geom_smooth(method='lm', se=F, size=linesize) +
+  theme_bw(base_size=textsize) +
+  theme(legend.position='none')
+ndmi
 
-rf_model <- randomForest(status_true ~ ., 
-                         data = train_data, 
-                         ntree = 500,  # Number of trees
-                         importance = TRUE)  # Compute variable importance
+ndvi = ggplot(data=plot_trends,
+              aes(x=slope_pct_dead, y=slope_NDVI, color=plot_type)) +
+  geom_point(size=pointsize) +
+  geom_smooth(method='lm', se=F, size=linesize) +
+  theme_bw(base_size=textsize) #+
+  theme(legend.position='none')
+ndvi
 
-print(rf_model)
-predictions <- predict(rf_model, test_data)
-conf_matrix <- confusionMatrix(predictions, test_data$status_true)
-print(conf_matrix)
+p = ndmi + ndvi + plot_layout(ncol = 2)
+p
+ggsave(plot=p,
+       filename='report/fhp ggplot.png',
+       units='in',
+       width=6.25,
+       height=3,
+       dpi=300)
+
+ggplot(data=plot_trends,
+       aes(x=slope_pct_dead, y=slope_NDVI, color=plot_type)) +
+  geom_point() +
+  geom_smooth(method='lm', se=F)
+
+

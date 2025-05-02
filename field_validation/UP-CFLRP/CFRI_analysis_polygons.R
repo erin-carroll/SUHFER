@@ -45,10 +45,15 @@ cor(dat$max_NDMI, dat$max_lwc, use='complete.obs') # 0.5960665
 
 sort(unique(trees$Year))
 plot_trends = trees %>%
+  # filter(PRE.POST=='POST') %>%
   # filter(Year>2016) %>% # time series 2017-2023 # nevermind - this limits data too majorly! Lose half of the already small dataset because first year (making any possible time series) is pre-2017
   group_by(plot) %>%
-  summarize(slope_pct_standing_live=coef(lm(pct_standing_live~Year))[2],
-            slope_pct_down_or_dead=coef(lm(pct_down_or_dead~Year))[2])
+  summarize(slope_pct_ba_standing_live=coef(lm(pct_ba_standing_live~Year))[2],
+            slope_pct_ba_dead=coef(lm(pct_ba_dead~Year))[2],
+            slope_pct_ba_dead_or_down=coef(lm(pct_ba_dead_or_down~Year))[2],
+            slope_standing_live_ba_density=coef(lm(standing_live_ba_density~Year))[2],
+            slope_dead_ba_density=coef(lm(dead_ba_density~Year))[2],
+            slope_dead_or_down_ba_density=coef(lm(dead_or_down_ba_density~Year))[2])
 
 sort(unique(dat$year))
 plot_trends_spectra = dat %>%
@@ -56,21 +61,15 @@ plot_trends_spectra = dat %>%
   group_by(plot) %>%
   summarize(slope_max_NDVI = coef(lm(max_NDVI~year))[2],
             slope_max_NDMI = coef(lm(max_NDMI~year))[2],
-            slope_max_lwc = coef(lm(max_lwc~year))[2],
             slope_min_NDVI = coef(lm(min_NDVI~year))[2],
             slope_min_NDMI = coef(lm(min_NDMI~year))[2],
-            slope_min_lwc = coef(lm(min_lwc~year))[2],
             slope_mean_NDVI = coef(lm(mean_NDVI~year))[2],
             slope_mean_NDMI = coef(lm(mean_NDMI~year))[2],
-            slope_mean_lwc = coef(lm(mean_lwc~year))[2],
             slope_std_NDVI = coef(lm(std_NDVI~year))[2],
-            slope_std_NDMI = coef(lm(std_NDMI~year))[2],
-            slope_std_lwc = coef(lm(std_lwc~year))[2])
+            slope_std_NDMI = coef(lm(std_NDMI~year))[2])
 
 plot_trends = plot_trends %>%
   left_join(plot_trends_spectra, by='plot')
-
-# shoot - forgot to extract data over a larger area.... because 50m plots. Will go back and fix soon.
 
 df = plot_trends %>% select(-plot)
 colnames(df) = gsub('slope_', '', colnames(df))
@@ -102,9 +101,9 @@ for (i in 1:ncol(df)) {
 }
 rownames(label_matrix) <- colnames(df)
 colnames(label_matrix) <- colnames(df)
-subset_rows <- 1:2
+subset_rows <- c("standing_live_ba_density", "dead_ba_density", "dead_or_down_ba_density")
 # subset_cols <- tail(colnames(df), 12)
-subset_cols = c("max_NDVI", "max_NDMI", "min_NDVI", "min_NDMI", "mean_NDVI", "mean_NDMI", "std_NDVI", "std_NDMI" )
+subset_cols = c("max_NDVI", "max_NDMI", "min_NDVI", "min_NDMI", "mean_NDVI", "mean_NDMI" )
 # subset_rows = c("max_NDVI", "max_NDMI", "min_NDVI", "min_NDMI", "mean_NDVI", "mean_NDMI", "std_NDVI", "std_NDMI" )
 # subset_cols <- 1:2
 
@@ -115,7 +114,7 @@ label_matrix_subset <- label_matrix[subset_rows, subset_cols]
 png('report/fig5, cfri.png', width=2000, height=561, res=300)
 
 corrplot(cor_matrix_subset, method = "color", 
-         tl.col = "black", tl.cex=0.5        # Make axis labels black
+         tl.col = "black", tl.cex=1        # Make axis labels black
 )
 corr_coords_subset <- expand.grid(1:length(subset_cols), 1:length(subset_rows))  # Properly map row & col order
 corr_coords_subset$Var2 <- rev(corr_coords_subset$Var2)  # Reverse Y-axis to match `corrplot()`
@@ -125,11 +124,46 @@ for (i in seq_along(p_values)) {
   
   text(corr_coords_subset$Var1[i], corr_coords_subset$Var2[i], 
        labels = as.vector(t(label_matrix_subset))[i], 
-       col = "black", cex = 0.5, font = font_weight)  # Correct font application
+       col = "black", cex = 1, font = font_weight)  # Correct font application
 }
 dev.off()
 
 
+
+# other viz
+linesize=0.5
+pointsize=0.25
+textsize=8
+
+ndmi = ggplot(data=plot_trends,
+              aes(x=slope_dead_or_down_ba_density, y=slope_mean_NDMI)) +
+  geom_point(size=pointsize) +
+  geom_smooth(method='lm', se=F, size=linesize) +
+  theme_bw(base_size=textsize) +
+  theme(legend.position='none')
+ndmi
+
+ndvi = ggplot(data=plot_trends,
+              aes(x=slope_dead_or_down_ba_density, y=slope_mean_NDVI)) +
+  geom_point(size=pointsize) +
+  geom_smooth(method='lm', se=F, size=linesize) +
+  theme_bw(base_size=textsize) +
+theme(legend.position='none')
+ndvi
+
+p = ndmi + ndvi + plot_layout(ncol = 2)
+p
+ggsave(plot=p,
+       filename='report/cfri ggplot.png',
+       units='in',
+       width=6.25,
+       height=3,
+       dpi=300)
+
+ggplot(data=plot_trends,
+       aes(x=slope_pct_dead, y=slope_NDVI, color=plot_type)) +
+  geom_point() +
+  geom_smooth(method='lm', se=F)
 
 
 

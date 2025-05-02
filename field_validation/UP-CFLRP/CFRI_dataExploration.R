@@ -4,21 +4,34 @@ library(lubridate)
 
 # plot-level data
 plots = read.csv('data/UP-CFRLP/raw/RA_data_Master_20240305_plotinfo.csv') %>%
-  filter(coordinate_E!='.') %>%
+  filter(coordinate_E!='.',
+         Pre_Post!='?') %>%
   mutate(coordinate_E = as.numeric(coordinate_E),
-         coordinate_N = as.numeric(coordinate_N))
+         coordinate_N = as.numeric(coordinate_N),
+         plot_type=if_else(Pre_Post %in% c("Post","POSTRX","PostRX","POST","PostRx"), 'POST', 'PRE'))
+
+# how many pre, post surveys per plot?
+tmp = plots %>%
+  group_by(Plot_name, plot_type) %>%
+  summarize(n_years=n_distinct(Year)) %>%
+  filter(plot_type=='POST', n_years>1)
 
 # tree-level data
 overstory = read.csv('data/UP-CFRLP/raw/RA_data_Master_20240305_overstory.csv') %>%
   mutate(DATE = parse_date_time(DATE, orders=c('mdy')),
          Spp=if_else(Spp %in% c('UNID', 'UNKFIR', 'UNKFl'), 'UNK', Spp),
          Spp=toupper(Spp),
-         Status=toupper(Status)) %>%
+         Status=toupper(Status),
+         DBH=as.numeric(DBH)) %>%
+  mutate(basal_area = pi*((DBH/2)^2)) %>%
   filter(PLOT %in% plots$Plot_name, # filter to where we have spatial coordinates in plots
          PLOT_TYPE!='PARTIAL') %>% # remove partially surveyed plots
   mutate(Year=year(DATE),
-         standing_live=if_else(Status=='L', 1, 0),
-         down_or_dead = if_else(Status %in% c('S', 'D', 'X', 'Y'), 1, 0))
+         ba_standing_live=if_else(Status=='L', basal_area, 0),
+         ba_dead = if_else(Status %in% c('D'), basal_area, 0),
+         ba_dead_or_down = if_else(Status %in% c('D', 'S', 'X', 'Y'), basal_area, 0),
+         PRE.POST=if_else(PRE.POST %in% c("POSTRX", "POST ", "POST"), 'POST', PRE.POST)) %>%
+  mutate(PRE.POST=if_else(PRE.POST=='?', NA, PRE.POST))
 
 # clean overstory
 colnames(overstory)
@@ -46,9 +59,8 @@ overstory = overstory %>%
 plots = plots %>%
   filter(Plot_name %in% overstory$PLOT)
 
-length(unique(plots$Plot_name)) # 49 plots??
-length(unique(overstory$PLOT)) # 49 plots??
-
+length(unique(plots$Plot_name)) # 49 plots
+length(unique(overstory$PLOT)) # 49 plots
 
 # visualize dates per plot 
 ggplot(data=overstory) +
@@ -80,14 +92,24 @@ tmp_ = overstory %>% # same
 tmp_ = overstory %>% # same
   filter(PLOT=='RA271')
 
+plot_area_cm2 = 164*164 * 929.03 # plot s164x164 ft
+
 overstory_summary = overstory %>%
-  group_by(PLOT, Year) %>%
+  group_by(PLOT, Year, PRE.POST) %>%
   summarize(n_trees_surveyed=n(), 
             n_species=n_distinct(Spp), # add field that gives counts n of each species?
-            n_standing_live=sum(standing_live),
-            n_down_or_dead=sum(down_or_dead)) %>%
-  mutate(pct_standing_live=n_standing_live/n_trees_surveyed,
-         pct_down_or_dead=n_down_or_dead/n_trees_surveyed)
+            total_ba_cm2=sum(basal_area, na.rm=T),
+            total_ba_standing_live_cm2=sum(ba_standing_live, na.rm=T),
+            total_ba_dead_cm2=sum(ba_dead, na.rm=T),
+            total_ba_dead_or_down_cm2=sum(ba_dead_or_down, na.rm=T)) %>%
+  ungroup() %>%
+  mutate(plot_area_cm2=plot_area_cm2) %>%
+  mutate(pct_ba_standing_live=total_ba_standing_live_cm2/total_ba_cm2,
+         pct_ba_dead=total_ba_dead_cm2/total_ba_cm2,
+         pct_ba_dead_or_down=total_ba_dead_or_down_cm2/total_ba_cm2,
+         standing_live_ba_density=total_ba_standing_live_cm2/plot_area_cm2,
+         dead_ba_density=total_ba_dead_cm2/plot_area_cm2,
+         dead_or_down_ba_density=total_ba_dead_or_down_cm2/plot_area_cm2)
 
 # export
 fp_out = 'data/UP-CFRLP/CFRI_trees_plot-level.csv'

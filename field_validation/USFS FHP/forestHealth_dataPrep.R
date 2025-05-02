@@ -3,8 +3,11 @@ library(ggplot2)
 library(stringr)
 library(sf)
 
+setwd('C:/Users/erinc/Desktop/Research/Projects/SUHFER')
+
+
 # prepare plot data (ids, years, coordinates)
-plot08 = read.csv('data/forest health/aspenSADplots08_clean_PLOT.csv') %>%
+plot08 = read.csv('data/forest health/raw/aspenSADplots08_clean_PLOT.csv') %>%
   filter(!is.na(Year)) %>%
   select(Year:NAD83.GPS.Zone) %>%
   rename(plot_number=PLOTn,
@@ -13,7 +16,7 @@ plot08 = read.csv('data/forest health/aspenSADplots08_clean_PLOT.csv') %>%
          GPS.Zone=NAD83.GPS.Zone) %>%
   select(-NatFor, -Preselected.Point..Attempts.)
 
-plot13 = read.csv('data/forest health/aspenSADplots13_clean_PLOT.csv') %>%
+plot13 = read.csv('data/forest health/raw/aspenSADplots13_clean_PLOT.csv') %>%
   rename(plot_number = Plot..,
          plot_type=PLOT.TYPE,
          date=Date,
@@ -23,13 +26,13 @@ plot13 = read.csv('data/forest health/aspenSADplots13_clean_PLOT.csv') %>%
   select(-Notes, -Sat.accuracy..ft., -Location.Type) %>%
   mutate(GPS.Zone=str_replace_all(GPS.Zone, 'S', 'N'))
 
+# get everything in one CRS
 tmp = plot13 %>%
   filter(GPS.Zone=='12N') %>%
   st_as_sf(coords=c('GPS.E', 'GPS.N'), crs=26912) %>%
   st_transform(crs=26913) %>%
   mutate(GPS.E_13N=st_coordinates(.)[,1],
          GPS.N_13N=st_coordinates(.)[,2])
-
 plot13 = plot13 %>%
   left_join(tmp) %>%
   mutate(GPS.N = if_else(GPS.Zone=='12N', GPS.N_13N, GPS.N),
@@ -37,7 +40,7 @@ plot13 = plot13 %>%
          GPS.Zone='13N') %>%
   select(Year:GPS.E)
 
-plot2x = read.csv('data/forest health/aspenSADplots202x_clean_PLOT.csv') %>%
+plot2x = read.csv('data/forest health/raw/aspenSADplots202x_clean_PLOT.csv') %>%
   select(Year:Date, -NF) %>%
   rename(plot_number=Plot..,
          plot_type=PLOT.TYPE,
@@ -69,23 +72,26 @@ plot_locations = plots %>%
   filter(Year==2013)
 
 # prepare tree data
-tree08 = read.csv('data/forest health/aspenSADplots08_clean_TREE.csv') %>%
+tree08 = read.csv('data/forest health/raw/aspenSADplots08_clean_TREE.csv') %>%
   filter(!is.na(Year)) %>%
   select(Year:Status, -Plot.., -PLOT.TYPE) %>%
-  rename(tree_number=Tree..,
-         dbh_cm=DBH..cm.,
+  rename(tree_number=Tree.., dbh_cm=DBH..cm.,
          crown_loss_pct=X..Crown.loss) %>%
   mutate(tree_number=as.character(tree_number)) %>%
-  filter(Plot!='079H')
-tree13 = read.csv('data/forest health/aspenSADplots13_clean_TREE.csv') %>%
+  filter(Plot!='079H') %>%
+  mutate(basal_area=pi*((dbh_cm/2)^2))
+  
+tree13 = read.csv('data/forest health/raw/aspenSADplots13_clean_TREE.csv') %>%
   filter(!is.na(Year)) %>%
   select(Year:RCL...., -BAF, -Date, -Plot.., -PLOT.TYPE) %>%
   rename(tree_number=Tree..,
          dbh_cm=DBH..cm.,
          crown_loss_pct=RCL....,
          Status=Tree.Type) %>%
-  mutate(tree_number=as.character(tree_number))
-tree2x = read.csv('data/forest health/aspenSADplots202x_clean_TREE.csv') %>%
+  mutate(tree_number=as.character(tree_number))  %>%
+  mutate(basal_area=pi*((dbh_cm/2)^2))
+
+tree2x = read.csv('data/forest health/raw/aspenSADplots202x_clean_TREE.csv') %>%
   filter(!is.na(Year)) %>%
   select(Year:RCL...., -Plot.., -PLOT.TYPE, -Forest, -BAF, -Date) %>%
   rename(tree_number=Tree..,
@@ -93,7 +99,8 @@ tree2x = read.csv('data/forest health/aspenSADplots202x_clean_TREE.csv') %>%
          crown_loss_pct=RCL....,
          Status=Tree.Type) %>% 
   mutate(tree_number=as.character(tree_number)) %>%
-  mutate(Status=if_else(((Plot=='92H') & (Species=='PIPO')), NA, Status))
+  mutate(Status=if_else(((Plot=='92H') & (Species=='PIPO')), NA, Status))  %>%
+  mutate(basal_area=pi*((dbh_cm/2)^2))
 
 trees = bind_rows(tree08, tree13, tree2x) %>%
   mutate(Plot=str_replace_all(Plot, 'D', 'S')) %>%
@@ -110,22 +117,30 @@ trees = bind_rows(tree08, tree13, tree2x) %>%
   mutate(Status=if_else((Status=='' | Status=='-' | Status=='notaspen' | Status=='not recorded' | Status=='conifer'), NA, Status)) %>%
   mutate(Status=str_replace_all(Status, 'dying', 'declining'))
 
-
 # summarize trees at the plot-level
 colnames(trees)
 unique(trees$Status)
 
 trees_by_plot = trees %>%
+  filter(!is.na(Status)) %>%
+  mutate(ba_healthy=if_else(Status=='healthy', basal_area, 0),
+         ba_dead=if_else(Status=='recent dead', basal_area, 0),
+         ba_declining=if_else(Status=='declining', basal_area, 0)) %>%
   group_by(Plot, Year) %>%
   summarize(n_trees = n(),
             n_aspen = sum(Species=='POTR5', na.rm=T),
             n_healthy = sum(Status=='healthy', na.rm=T),
             n_recent_dead = sum(Status=='recent dead', na.rm=T),
             n_declining = sum(Status=='declining', na.rm=T),
-            n_snag = sum(Status=='snag', na.rm=T)) %>%
-  mutate(FLAG_lessthan75pctaspen=if_else(((n_aspen/n_trees)>=0.75), 0, 1)) # flag where < 75% aspen, meaning missing a lot of data
-
-colnames(trees_by_plot)
+            n_snag = sum(Status=='snag', na.rm=T),
+            total_ba = sum(basal_area),
+            total_ba_healthy = sum(ba_healthy),
+            total_ba_dead = sum(ba_dead),
+            total_ba_declining = sum(ba_declining)) %>%
+  mutate(FLAG_lessthan75pctaspen=if_else(((n_aspen/n_trees)>=0.75), 0, 1),
+         pct_ba_healthy=total_ba_healthy/total_ba,
+         pct_ba_dead=total_ba_dead/total_ba,
+         pct_ba_declining=total_ba_declining/total_ba) # flag where < 75% aspen, meaning missing a lot of data
 
 # final time series?
 ggplot(data=trees_by_plot) +
@@ -133,10 +148,10 @@ ggplot(data=trees_by_plot) +
   facet_wrap(~Plot) +
   ylab('pct healthy')
 
-fp_out='data/forest health/forest_health_plots.csv'
+fp_out='data/forest health/FHP_plots.csv'
 write.csv(plots, fp_out, row.names=F)
 
-fp_out='data/forest health/forest_health_trees_plot-level_20250301.csv'
+fp_out='data/forest health/FHP_plot-level.csv'
 write.csv(trees_by_plot, fp_out, row.names=F)
 
 
