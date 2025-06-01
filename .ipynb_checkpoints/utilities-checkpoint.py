@@ -400,56 +400,42 @@ def mosaic_gmug(year, month, index, tif_folder, target_crs, gdf):
 
     os.sync()
 
-#########################################
-## DEPLOY LWC MODEL
-#########################################
+########################
+## TREND POLYGONS
+########################
 
-def get_coords(n, window_radius, buffer):
-    c1 = 0
-    cs = []
-    while c1 < n:
-        c1 = c1
-        c2 = c1 + 2*window_radius
-        if c2 > n:
-            break
-        cs.append([c1, c2])
-        c1 = c1 + 2*(window_radius-buffer)
-    if cs[len(cs)-1][1] < n:
-        c2 = n
-        c1 = c2 - 2*window_radius
-        cs.append([c1, c2])
-    return cs
-
-def _cropped_loss(y_true, y_pred):
-    if (buffer is not None):
-        y_true = y_true[:, buffer:-buffer, buffer:-buffer, :]
-        y_pred = y_pred[:, buffer:-buffer, buffer:-buffer, :]
-    mse = keras.losses.MeanSquaredError()
-    loss = mse(y_true, y_pred)
-    if weighted:
-        weights = sample_weight
-        loss = loss * weights
-    return loss
-
-# define custom loss function
-def mse_cropped_loss(buffer, weighted):
-    def _cropped_loss(y_true, y_pred):
-        if (buffer is not None):
-            y_true = y_true[:, buffer:-buffer, buffer:-buffer, :]
-            y_pred = y_pred[:, buffer:-buffer, buffer:-buffer, :]
-        mse = keras.losses.MeanSquaredError()
-        loss = mse(y_true, y_pred)
-        if weighted:
-            weights = sample_weight
-            loss = loss * weights
-        return loss
-    return _cropped_loss
-
-
-
-
-
-
-
+def raster_data_to_polygon(raster_fp, shp):
+    name = raster_fp.split('/')[-1].strip('.tif')
+    y = name.split('_')[0]
+    m = name.split('_')[1][1:]
+    idx = name.split('_')[2]
     
+    stats_list = []
+    with rasterio.open(raster_fp) as src:
+        shp_ = shp.copy()
+        # iterate over each polygon feature in the shapefile
+        for index, row in shp_.iterrows():
+            geometry = [row.geometry]
+            
+            try:
+                masked_raster, _ = mask(src, geometry, crop=True, filled=True, nodata=np.nan) # Mask the raster with the polygon         
+                data = masked_raster[0].flatten() # Convert masked raster to a 1D array and remove NaNs
+                data = data[~np.isnan(data)]  # Remove nodata values
+                if len(data) > 0:
+                    min_val = np.min(data)
+                    mean_val = np.mean(data)
+                    max_val = np.max(data)
+                    std_val = np.std(data)
+                else:
+                    min_val, mean_val, max_val, std_val = np.nan, np.nan, np.nan, np.nan  # Handle empty geometries
+    
+            except:
+                min_val, mean_val, max_val, std_val = np.nan, np.nan, np.nan, np.nan  # Handle errors gracefully
+    
+            # Store statistics
+            stats_list.append((min_val, mean_val, max_val, std_val, y, m, idx))
 
+            
+    # Convert statistics list into separate columns
+    shp_[['min', 'mean', 'max', 'std', 'year', 'month', 'idx']] = stats_list
+    return shp_
