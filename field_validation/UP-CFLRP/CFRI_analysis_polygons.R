@@ -11,8 +11,6 @@ library(keras)
 
 setwd('C:/Users/erinc/Desktop/Research/Projects/SUHFER')
 
-# old = read.csv('data/UP-CFRLP/CFRI_plots_spectra.csv')
-
 # load data
 dat = read.csv('data/UP-CFRLP/CFRI_plots_spectra_polygons.csv') %>%
   mutate(date=paste(month, year)) %>%
@@ -20,15 +18,13 @@ dat = read.csv('data/UP-CFRLP/CFRI_plots_spectra_polygons.csv') %>%
   pivot_wider(names_from=metric, values_from=c(min, mean, max, std))
 plots = read.csv('data/UP-CFRLP/CFRI_plots.csv') %>%
   rename(plot=Plot_name)
-trees = read.csv('data/UP-CFRLP/CFRI_trees_plot-level.csv') %>%
+# subset field sampling to time points relevant to time window of spectral data (2018 - )
+trees = read.csv('data/UP-CFRLP/CFRI_trees_plot-level_CJPNotes.csv') %>%
   rename(plot=PLOT)
 
 # sanity check, everyone has the same name
 sort(unique(dat$plot)) == sort(unique(plots$plot)) 
 sort(unique(plots$plot)) == sort(unique(trees$plot))
-
-# any necessary plot filtering?
-# I don't think any is necessary in this case
 
 # again, how correlated are ndmi, lwc?
 cor(dat$max_NDMI, dat$max_lwc, use='complete.obs') # 0.5960665
